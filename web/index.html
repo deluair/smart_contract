@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeFi Blockchain Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-cube"></i>
+                <span>DeFi Platform</span>
+            </div>
+            <div class="nav-menu">
+                <a href="#dashboard" class="nav-link active" data-section="dashboard">
+                    <i class="fas fa-chart-line"></i> Dashboard
+                </a>
+                <a href="#wallet" class="nav-link" data-section="wallet">
+                    <i class="fas fa-wallet"></i> Wallet
+                </a>
+                <a href="#trading" class="nav-link" data-section="trading">
+                    <i class="fas fa-exchange-alt"></i> Trading
+                </a>
+                <a href="#lending" class="nav-link" data-section="lending">
+                    <i class="fas fa-hand-holding-usd"></i> Lending
+                </a>
+                <a href="#derivatives" class="nav-link" data-section="derivatives">
+                    <i class="fas fa-chart-area"></i> Derivatives
+                </a>
+                <a href="#oracles" class="nav-link" data-section="oracles">
+                    <i class="fas fa-satellite-dish"></i> Oracles
+                </a>
+            </div>
+            <div class="nav-auth">
+                <div class="user-info" id="userInfo" style="display: none;">
+                    <span id="userName"></span>
+                    <button class="btn-logout" onclick="logout()">Logout</button>
+                </div>
+                <div class="auth-buttons" id="authButtons">
+                    <button class="btn-secondary" onclick="showLogin()">Login</button>
+                    <button class="btn-primary" onclick="showRegister()">Register</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Dashboard Section -->
+        <section id="dashboard" class="content-section active">
+            <div class="section-header">
+                <h1>Dashboard</h1>
+                <p>Overview of your DeFi portfolio and market data</p>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-coins"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h3 id="totalBalance">$0.00</h3>
+                        <p>Total Balance</p>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h3 id="portfolioChange">+0.00%</h3>
+                        <p>24h Change</p>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-cube"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h3 id="blockHeight">0</h3>
+                        <p>Block Height</p>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-network-wired"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h3 id="activeOracles">0</h3>
+                        <p>Active Oracles</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="dashboard-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Price Feeds</h3>
+                        <button class="btn-refresh" onclick="refreshPrices()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="price-list" id="priceList">
+                        <!-- Price feeds will be populated here -->
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Recent Transactions</h3>
+                    </div>
+                    <div class="transaction-list" id="transactionList">
+                        <!-- Recent transactions will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Wallet Section -->
+        <section id="wallet" class="content-section">
+            <div class="section-header">
+                <h1>Wallet Management</h1>
+                <p>Create and manage your blockchain wallets</p>
+            </div>
+            
+            <div class="wallet-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Create Wallet</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="form-group">
+                            <label>Wallet Type</label>
+                            <select id="walletType" class="form-control">
+                                <option value="standard">Standard Wallet</option>
+                                <option value="hd">HD Wallet</option>
+                                <option value="multisig">Multi-Signature</option>
+                            </select>
+                        </div>
+                        
+                        <div id="multisigOptions" class="multisig-options" style="display: none;">
+                            <div class="form-group">
+                                <label>Required Signatures</label>
+                                <input type="number" id="requiredSigs" class="form-control" min="1" max="10" value="2">
+                            </div>
+                            <div class="form-group">
+                                <label>Public Keys (one per line)</label>
+                                <textarea id="publicKeys" class="form-control" rows="4" placeholder="Enter public keys..."></textarea>
+                            </div>
+                        </div>
+                        
+                        <button class="btn-primary" onclick="createWallet()">Create Wallet</button>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Your Wallets</h3>
+                    </div>
+                    <div class="wallet-list" id="walletList">
+                        <!-- Wallet list will be populated here -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3>Send Transaction</h3>
+                </div>
+                <div class="card-content">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>From Address</label>
+                            <select id="fromAddress" class="form-control">
+                                <option value="">Select wallet...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>To Address</label>
+                            <input type="text" id="toAddress" class="form-control" placeholder="Recipient address">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Amount</label>
+                            <input type="number" id="amount" class="form-control" step="0.000001" placeholder="0.000000">
+                        </div>
+                        <div class="form-group">
+                            <label>Fee</label>
+                            <input type="number" id="fee" class="form-control" step="0.000001" value="0.001">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Private Key</label>
+                        <input type="password" id="privateKey" class="form-control" placeholder="Enter private key">
+                    </div>
+                    <button class="btn-primary" onclick="sendTransaction()">Send Transaction</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Trading Section -->
+        <section id="trading" class="content-section">
+            <div class="section-header">
+                <h1>Decentralized Exchange</h1>
+                <p>Trade tokens and provide liquidity</p>
+            </div>
+            
+            <div class="trading-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Token Swap</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="swap-container">
+                            <div class="swap-input">
+                                <label>From</label>
+                                <div class="input-group">
+                                    <input type="number" id="swapFromAmount" class="form-control" placeholder="0.0">
+                                    <select id="swapFromToken" class="form-control">
+                                        <option value="ETH">ETH</option>
+                                        <option value="USDC">USDC</option>
+                                        <option value="DAI">DAI</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="swap-arrow">
+                                <button class="btn-swap" onclick="swapTokens()">
+                                    <i class="fas fa-exchange-alt"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="swap-input">
+                                <label>To</label>
+                                <div class="input-group">
+                                    <input type="number" id="swapToAmount" class="form-control" placeholder="0.0" readonly>
+                                    <select id="swapToToken" class="form-control">
+                                        <option value="USDC">USDC</option>
+                                        <option value="ETH">ETH</option>
+                                        <option value="DAI">DAI</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="swap-info">
+                            <div class="info-row">
+                                <span>Exchange Rate:</span>
+                                <span id="exchangeRate">1 ETH = 2000 USDC</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Slippage:</span>
+                                <span>0.5%</span>
+                            </div>
+                        </div>
+                        
+                        <button class="btn-primary btn-full" onclick="executeSwap()">Swap Tokens</button>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Liquidity Pools</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="pool-list" id="poolList">
+                            <!-- Liquidity pools will be populated here -->
+                        </div>
+                        
+                        <div class="add-liquidity">
+                            <h4>Add Liquidity</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Token A</label>
+                                    <div class="input-group">
+                                        <input type="number" id="liquidityAmountA" class="form-control" placeholder="0.0">
+                                        <select id="liquidityTokenA" class="form-control">
+                                            <option value="ETH">ETH</option>
+                                            <option value="USDC">USDC</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Token B</label>
+                                    <div class="input-group">
+                                        <input type="number" id="liquidityAmountB" class="form-control" placeholder="0.0">
+                                        <select id="liquidityTokenB" class="form-control">
+                                            <option value="USDC">USDC</option>
+                                            <option value="ETH">ETH</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn-primary" onclick="addLiquidity()">Add Liquidity</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Lending Section -->
+        <section id="lending" class="content-section">
+            <div class="section-header">
+                <h1>Lending Protocol</h1>
+                <p>Supply collateral and borrow assets</p>
+            </div>
+            
+            <div class="lending-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Supply Assets</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="asset-list" id="supplyAssets">
+                            <!-- Supply assets will be populated here -->
+                        </div>
+                        
+                        <div class="supply-form">
+                            <div class="form-group">
+                                <label>Asset</label>
+                                <select id="supplyAsset" class="form-control">
+                                    <option value="ETH">ETH</option>
+                                    <option value="USDC">USDC</option>
+                                    <option value="DAI">DAI</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Amount</label>
+                                <input type="number" id="supplyAmount" class="form-control" placeholder="0.0">
+                            </div>
+                            <button class="btn-primary" onclick="supplyAsset()">Supply</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Borrow Assets</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="borrow-stats">
+                            <div class="stat-item">
+                                <span>Collateral Value:</span>
+                                <span id="collateralValue">$0.00</span>
+                            </div>
+                            <div class="stat-item">
+                                <span>Borrowed Value:</span>
+                                <span id="borrowedValue">$0.00</span>
+                            </div>
+                            <div class="stat-item">
+                                <span>Health Factor:</span>
+                                <span id="healthFactor">∞</span>
+                            </div>
+                        </div>
+                        
+                        <div class="borrow-form">
+                            <div class="form-group">
+                                <label>Asset</label>
+                                <select id="borrowAsset" class="form-control">
+                                    <option value="USDC">USDC</option>
+                                    <option value="DAI">DAI</option>
+                                    <option value="ETH">ETH</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Amount</label>
+                                <input type="number" id="borrowAmount" class="form-control" placeholder="0.0">
+                            </div>
+                            <button class="btn-primary" onclick="borrowAsset()">Borrow</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Derivatives Section -->
+        <section id="derivatives" class="content-section">
+            <div class="section-header">
+                <h1>Derivatives Trading</h1>
+                <p>Trade options and futures contracts</p>
+            </div>
+            
+            <div class="derivatives-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Options</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="options-form">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Underlying Asset</label>
+                                    <select id="optionAsset" class="form-control">
+                                        <option value="ETH">ETH</option>
+                                        <option value="BTC">BTC</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Option Type</label>
+                                    <select id="optionType" class="form-control">
+                                        <option value="call">Call</option>
+                                        <option value="put">Put</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Strike Price</label>
+                                    <input type="number" id="strikePrice" class="form-control" placeholder="0.0">
+                                </div>
+                                <div class="form-group">
+                                    <label>Expiry Date</label>
+                                    <input type="date" id="expiryDate" class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Premium</label>
+                                <input type="number" id="premium" class="form-control" placeholder="0.0">
+                            </div>
+                            <button class="btn-primary" onclick="createOption()">Create Option</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Active Positions</h3>
+                    </div>
+                    <div class="positions-list" id="positionsList">
+                        <!-- Active positions will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Oracles Section -->
+        <section id="oracles" class="content-section">
+            <div class="section-header">
+                <h1>Oracle Network</h1>
+                <p>Monitor price feeds and oracle data</p>
+            </div>
+            
+            <div class="oracles-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Price Feeds</h3>
+                        <button class="btn-refresh" onclick="refreshOracleData()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="oracle-feeds" id="oracleFeeds">
+                        <!-- Oracle feeds will be populated here -->
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Oracle Nodes</h3>
+                    </div>
+                    <div class="oracle-nodes" id="oracleNodes">
+                        <!-- Oracle nodes will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modals -->
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Login</h3>
+                <span class="close" onclick="closeModal('loginModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="loginUsername" class="form-control" placeholder="Enter username">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" class="form-control" placeholder="Enter password">
+                </div>
+                <button class="btn-primary btn-full" onclick="login()">Login</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="registerModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Register</h3>
+                <span class="close" onclick="closeModal('registerModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="registerUsername" class="form-control" placeholder="Enter username">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="registerEmail" class="form-control" placeholder="Enter email">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="registerPassword" class="form-control" placeholder="Enter password">
+                </div>
+                <button class="btn-primary btn-full" onclick="register()">Register</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
