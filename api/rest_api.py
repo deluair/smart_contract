@@ -98,6 +98,8 @@ class BlockchainAPI:
                              resource_class_kwargs={'api': self})
         self.api.add_resource(DerivativesResource, '/api/contracts/derivatives',
                              resource_class_kwargs={'api': self})
+        self.api.add_resource(ContractVerificationResource, '/api/contracts/verify',
+                             resource_class_kwargs={'api': self})
         
         # Oracle routes
         self.api.add_resource(PriceFeedResource, '/api/oracle/price/<symbol>',
@@ -107,6 +109,10 @@ class BlockchainAPI:
         
         # Market data routes
         self.api.add_resource(MarketDataResource, '/api/market/data',
+                             resource_class_kwargs={'api': self})
+        
+        # Health check route
+        self.api.add_resource(HealthCheckResource, '/api/health',
                              resource_class_kwargs={'api': self})
         
     def run(self, host='0.0.0.0', port=5000, debug=False):
@@ -726,6 +732,79 @@ class MarketDataResource(Resource):
         except Exception as e:
             logger.error(f"Market data error: {e}")
             return {'error': 'Failed to get market data'}, 500
+
+class ContractVerificationResource(Resource):
+    """Contract signature verification endpoints"""
+    
+    def __init__(self, api):
+        self.api = api
+        
+    def post(self):
+        """Verify contract signature"""
+        try:
+            data = request.get_json()
+            contract_data = data.get('contract_data')
+            signature_data = data.get('signature_data')
+            
+            if not contract_data or not signature_data:
+                return {'error': 'Missing contract_data or signature_data'}, 400
+            
+            # Convert signature_data dict to SignatureData object
+            from security.signatures import SignatureData
+            sig_obj = SignatureData(
+                signature=signature_data.get('signature'),
+                public_key=signature_data.get('public_key'),
+                address=signature_data.get('address'),
+                timestamp=signature_data.get('timestamp', time.time())
+            )
+            
+            # Verify the signature
+            from security.signatures import SmartContractSigner
+            signer = SmartContractSigner()
+            is_valid = signer.verify_contract_signature(contract_data, sig_obj)
+            
+            return {
+                'valid': is_valid,
+                'contract_address': contract_data.get('owner', 'unknown'),
+                'timestamp': time.time()
+            }
+            
+        except Exception as e:
+            logger.error(f"Contract verification error: {e}")
+            return {'error': 'Contract verification failed'}, 500
+
+class HealthCheckResource(Resource):
+    """Health check endpoints"""
+    
+    def __init__(self, api):
+        self.api = api
+        
+    def get(self):
+        """Get API health status"""
+        try:
+            # Check various components
+            blockchain_status = self.api.blockchain is not None
+            oracle_status = self.api.oracle_manager is not None
+            account_status = self.api.account_manager is not None
+            
+            return {
+                'status': 'healthy',
+                'components': {
+                    'blockchain': blockchain_status,
+                    'oracles': oracle_status,
+                    'accounts': account_status
+                },
+                'version': '1.0.0',
+                'timestamp': time.time()
+            }
+            
+        except Exception as e:
+            logger.error(f"Health check error: {e}")
+            return {
+                'status': 'unhealthy',
+                'error': str(e),
+                'timestamp': time.time()
+            }, 500
 
 # Main application factory
 def create_app():

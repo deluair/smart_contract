@@ -398,13 +398,19 @@ class OracleManager:
         """Sign oracle response"""
         # Create message hash
         message = json.dumps(response_data, sort_keys=True)
-        message_hash = hashlib.sha256(message.encode()).digest()
         
         # Sign with oracle's private key
-        key_pair = ECDSAKeyPair.from_private_key(bytes.fromhex(private_key))
-        signature_data = self.transaction_signer.sign_message(message_hash, private_key)
+        key_pair = ECDSAKeyPair.from_private_key_bytes(bytes.fromhex(private_key))
+        oracle_address = key_pair.get_address()
         
-        return signature_data.signature
+        # Add key pair to signer if not already present
+        if oracle_address not in self.transaction_signer.key_pairs:
+            self.transaction_signer.add_key_pair(oracle_address, key_pair)
+        
+        # Sign the message
+        signature = self.transaction_signer.sign_message(message, oracle_address)
+        
+        return signature
         
     def _validate_response(self, response: OracleResponse, request: DataRequest):
         """Validate oracle response"""

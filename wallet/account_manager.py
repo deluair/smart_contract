@@ -34,6 +34,7 @@ class PermissionType(Enum):
     IMPORT_KEYS = "IMPORT_KEYS"
     STAKE_TOKENS = "STAKE_TOKENS"
     TRADE_TOKENS = "TRADE_TOKENS"
+    TRADE = "TRADE"
     MANAGE_CONTRACTS = "MANAGE_CONTRACTS"
     SYSTEM_ADMIN = "SYSTEM_ADMIN"
 
@@ -505,7 +506,14 @@ class AccountManager:
             target_user.permissions.append(permission)
             
         return True
-        
+    
+    def has_permission(self, user_id: str, permission_type: PermissionType, resource_id: Optional[str] = None) -> bool:
+        """Check if user has specific permission"""
+        user = self.users.get(user_id)
+        if not user:
+            return False
+        return user.has_permission(permission_type, resource_id)
+    
     def enable_two_factor_auth(self, user_id: str) -> Tuple[str, List[str]]:
         """Enable 2FA for user and return secret and backup codes"""
         user = self.users.get(user_id)

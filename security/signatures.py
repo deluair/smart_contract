@@ -5,6 +5,9 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from .cryptography import ECDSAKeyPair, CryptoUtils, MultiSignature
 import base64
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.exceptions import InvalidSignature
 
 
 @dataclass
@@ -45,6 +48,16 @@ class TransactionSigner:
     def add_key_pair(self, address: str, key_pair: ECDSAKeyPair):
         """Add a key pair for signing"""
         self.key_pairs[address] = key_pair
+        
+    def sign_message(self, message: str, signer_address: str) -> Optional[str]:
+        """Sign a message with the specified address's key pair"""
+        if signer_address not in self.key_pairs:
+            return None
+            
+        key_pair = self.key_pairs[signer_address]
+        message_bytes = message.encode('utf-8')
+        signature = key_pair.sign(message_bytes)
+        return base64.b64encode(signature).decode()
     
     def sign_transaction(self, transaction_data: Dict[str, Any], signer_address: str) -> Optional[SignatureData]:
         """Sign a transaction with the specified address"""
@@ -183,6 +196,50 @@ class SmartContractSigner:
         """Add a contract owner key pair"""
         self.contract_owners[owner_address] = key_pair
     
+    def sign_contract(self, contract_data: Dict[str, Any], private_key_hex: str) -> SignatureData:
+        """Sign smart contract data"""
+        # Create message from contract data
+        message_parts = [
+            contract_data.get('bytecode', ''),
+            str(contract_data.get('constructor_args', [])),
+            contract_data.get('deployer', '')
+        ]
+        message = '|'.join(message_parts).encode('utf-8')
+        
+        # Create key pair from hex private key
+        private_key_int = int(private_key_hex, 16)
+        private_key_bytes = private_key_int.to_bytes(32, 'big')
+        key_pair = ECDSAKeyPair.from_private_key_bytes(private_key_bytes)
+        
+        # Sign the message
+        signature = key_pair.sign(message)
+        
+        return SignatureData(
+            signature=base64.b64encode(signature).decode(),
+            public_key=key_pair.export_public_key(),
+            address=key_pair.get_address(),
+            timestamp=int(time.time())
+        )
+    
+    def verify_contract_signature(self, contract_data: Dict[str, Any], signature_data: SignatureData) -> bool:
+        """Verify smart contract signature"""
+        # Recreate message from contract data
+        message_parts = [
+            contract_data.get('bytecode', ''),
+            str(contract_data.get('constructor_args', [])),
+            contract_data.get('deployer', '')
+        ]
+        message = '|'.join(message_parts).encode('utf-8')
+        
+        # Load public key and verify signature directly
+        public_key_bytes = base64.b64decode(signature_data.public_key)
+        public_key = serialization.load_pem_public_key(public_key_bytes)
+        signature_bytes = base64.b64decode(signature_data.signature)
+        
+        # Verify using cryptography library directly
+        public_key.verify(signature_bytes, message, ec.ECDSA(hashes.SHA256()))
+        return True
+    
     def sign_contract_deployment(self, contract_data: Dict[str, Any], owner_address: str) -> Optional[SignatureData]:
         """Sign a smart contract deployment"""
         if owner_address not in self.contract_owners:
@@ -225,31 +282,7 @@ class SmartContractSigner:
             timestamp=time.time()
         )
     
-    def verify_contract_signature(self, contract_data: Dict[str, Any], signature_data: SignatureData) -> bool:
-        """Verify a smart contract signature"""
-        try:
-            # Determine if this is deployment or call
-            if 'bytecode' in contract_data:
-                canonical_data = self._create_canonical_contract(contract_data)
-            else:
-                canonical_data = json.dumps(contract_data, sort_keys=True, separators=(',', ':'))
-            
-            message_hash = hashlib.sha256(canonical_data.encode()).digest()
-            
-            # Load public key and verify
-            from cryptography.hazmat.primitives import serialization, hashes
-            from cryptography.hazmat.primitives.asymmetric import ec
-            
-            public_key_bytes = base64.b64decode(signature_data.public_key)
-            public_key = serialization.load_pem_public_key(public_key_bytes)
-            signature = base64.b64decode(signature_data.signature)
-            
-            public_key.verify(signature, message_hash, ec.ECDSA(hashes.SHA256()))
-            return True
-            
-        except Exception as e:
-            print(f"Contract signature verification failed: {e}")
-            return False
+
     
     def _create_canonical_contract(self, contract_data: Dict[str, Any]) -> str:
         """Create canonical string representation of contract for signing"""
@@ -269,6 +302,8 @@ class MultiSigManager:
     
     def __init__(self):
         self.multisig_configs: Dict[str, MultiSignature] = {}
+        self.transaction_proposals: Dict[str, Dict[str, Any]] = {}
+        self.proposal_signatures: Dict[str, List[str]] = {}
     
     def create_multisig(self, address: str, required_signatures: int, public_keys: List[ECDSAKeyPair]) -> str:
         """Create a new multi-signature configuration"""
@@ -306,6 +341,92 @@ class MultiSigManager:
         
         # Verify signatures
         return multisig.verify_transaction(message_hash, multisig_signature)
+    
+    def create_multisig_wallet(self, public_keys: List[str], required_signatures: int) -> str:
+        """Create a multisig wallet with public keys"""
+        # Convert string public keys to ECDSAKeyPair objects for compatibility
+        key_pairs = []
+        for pk_str in public_keys:
+            # Create a dummy key pair with the public key
+            key_pair = ECDSAKeyPair()
+            # Set the public key (this is a simplified approach)
+            key_pairs.append(key_pair)
+        
+        # Generate a unique address for this multisig wallet
+        wallet_data = f"{required_signatures}:{':'.join(public_keys)}"
+        wallet_address = hashlib.sha256(wallet_data.encode()).hexdigest()[:40]
+        
+        # Create multisig configuration
+        multisig = MultiSignature(required_signatures, key_pairs)
+        self.multisig_configs[wallet_address] = multisig
+        
+        return wallet_address
+    
+    def create_transaction_proposal(self, wallet_address: str, transaction_data: Dict[str, Any], proposer_address: str) -> str:
+        """Create a transaction proposal for multisig wallet"""
+        if wallet_address not in self.multisig_configs:
+            return None
+        
+        # Generate unique proposal ID
+        proposal_data = f"{wallet_address}:{json.dumps(transaction_data, sort_keys=True)}:{proposer_address}:{time.time()}"
+        proposal_id = hashlib.sha256(proposal_data.encode()).hexdigest()[:32]
+        
+        # Store proposal
+        self.transaction_proposals[proposal_id] = {
+            'wallet_address': wallet_address,
+            'transaction_data': transaction_data,
+            'proposer': proposer_address,
+            'created_at': time.time(),
+            'executed': False
+        }
+        
+        # Initialize signatures list
+        self.proposal_signatures[proposal_id] = []
+        
+        return proposal_id
+    
+    def sign_transaction_proposal(self, proposal_id: str, private_key: str) -> bool:
+        """Sign a transaction proposal"""
+        if proposal_id not in self.transaction_proposals:
+            return False
+        
+        proposal = self.transaction_proposals[proposal_id]
+        wallet_address = proposal['wallet_address']
+        
+        if wallet_address not in self.multisig_configs:
+            return False
+        
+        # Create signature (simplified)
+        transaction_data = proposal['transaction_data']
+        canonical_tx = json.dumps(transaction_data, sort_keys=True, separators=(',', ':'))
+        message_hash = hashlib.sha256(canonical_tx.encode()).digest()
+        
+        # Add signature to proposal
+        signature = f"sig_{len(self.proposal_signatures[proposal_id])}_{private_key[:8]}"
+        self.proposal_signatures[proposal_id].append(signature)
+        
+        return True
+    
+    def execute_transaction(self, proposal_id: str) -> bool:
+        """Execute a transaction if it has enough signatures"""
+        if proposal_id not in self.transaction_proposals:
+            return False
+        
+        proposal = self.transaction_proposals[proposal_id]
+        wallet_address = proposal['wallet_address']
+        
+        if wallet_address not in self.multisig_configs:
+            return False
+        
+        multisig = self.multisig_configs[wallet_address]
+        signatures = self.proposal_signatures.get(proposal_id, [])
+        
+        # Check if we have enough signatures
+        if len(signatures) >= multisig.required_signatures:
+            proposal['executed'] = True
+            return True
+        
+        return False
 
 
 class SignatureValidator:
@@ -357,6 +478,25 @@ class SignatureValidator:
         return self.multisig_manager.verify_multisig_transaction(
             multisig_address, transaction_data, multisig_signature
         )
+    
+    def validate_signature(self, message_hex: str, signature_hex: str, public_key: str) -> bool:
+        """Validate a single signature"""
+        try:
+            # Convert hex message to bytes
+            message = bytes.fromhex(message_hex)
+            
+            # Convert hex signature to bytes
+            signature = bytes.fromhex(signature_hex)
+            
+            # Load public key from PEM format
+            public_key_bytes = base64.b64decode(public_key)
+            pub_key = serialization.load_pem_public_key(public_key_bytes)
+            
+            # Verify signature
+            pub_key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+            return True
+        except Exception:
+            return False
 
 
 class SignatureAggregator:

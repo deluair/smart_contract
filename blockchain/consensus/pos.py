@@ -52,6 +52,8 @@ class Validator:
     # Rewards and penalties
     accumulated_rewards: int = 0
     accumulated_penalties: int = 0
+    slashed_amount: int = 0
+    total_rewards: int = 0
     
     # Commission for delegators
     commission_rate: int = 1000  # 10% in basis points
@@ -244,9 +246,89 @@ class ProofOfStake:
                 
         return True
         
-    def select_block_proposer(self, slot: int) -> Optional[str]:
+    def select_block_proposer(self, slot: int = None) -> Optional[str]:
         """Select block proposer for a given slot using weighted random selection"""
+        if slot is None:
+            slot = int(time.time()) // 12  # Default to current slot (12 second slots)
         active_validators = [addr for addr, val in self.validators.items() if val.is_active]
+        
+        if not active_validators:
+            return None
+            
+        # Simple round-robin selection based on slot
+        return active_validators[slot % len(active_validators)]
+        
+    def select_proposer(self, slot: int) -> Optional[str]:
+        """Alias for select_block_proposer for test compatibility"""
+        return self.select_block_proposer(slot)
+        
+    def validate_block(self, block, validator_id: str) -> bool:
+        """Validate a block proposal"""
+        if validator_id not in self.validators:
+            return False
+            
+        validator = self.validators[validator_id]
+        if not validator.is_active:
+            return False
+            
+        # Basic block validation
+        if hasattr(block, 'validate'):
+            is_valid, _ = block.validate()
+            return is_valid
+            
+        return True
+        
+    def distribute_rewards(self, validator_id: str, total_reward: int) -> bool:
+        """Distribute rewards to validator and delegators"""
+        if validator_id not in self.validators:
+            return False
+            
+        validator = self.validators[validator_id]
+        
+        # Calculate commission
+        commission = (total_reward * validator.commission_rate) // 10000
+        delegator_rewards = total_reward - commission
+        
+        # Add rewards to validator
+        validator.accumulated_rewards += commission
+        validator.total_rewards += commission
+        
+        # Distribute to delegators based on their stake proportion
+        if validator_id in self.validator_delegations:
+            total_delegated = validator.delegated_stake
+            if total_delegated > 0:
+                for delegation in self.validator_delegations[validator_id]:
+                    if delegation.undelegation_epoch == 0:  # Active delegation
+                        reward_share = (delegator_rewards * delegation.amount) // total_delegated
+                        delegation.rewards_claimed += reward_share
+        
+        return True
+        
+    def slash_validator(self, validator_id: str, slash_amount: int, reason: str) -> bool:
+        """Slash a validator for malicious behavior"""
+        if validator_id not in self.validators:
+            return False
+            
+        validator = self.validators[validator_id]
+        
+        # Update validator state
+        validator.slashed = True
+        validator.status = ValidatorStatus.SLASHED
+        validator.slashed_amount = slash_amount
+        validator.accumulated_penalties += slash_amount
+        
+        # Record slashing event
+        slashing_event = SlashingEvent(
+            validator=validator_id,
+            reason=SlashingReason.MALICIOUS_BEHAVIOR,  # Default reason
+            epoch=self.current_epoch,
+            evidence={"reason": reason},
+            penalty_amount=slash_amount,
+            timestamp=int(time.time())
+        )
+        self.slashing_events.append(slashing_event)
+        
+        return True
         
         if not active_validators:
             return None

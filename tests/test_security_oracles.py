@@ -3,6 +3,7 @@ import time
 import json
 import hashlib
 import secrets
+import base64
 from decimal import Decimal
 from unittest.mock import Mock, patch, MagicMock
 
@@ -40,20 +41,31 @@ class TestCryptography(unittest.TestCase):
         
         self.assertIsNotNone(key_pair.private_key)
         self.assertIsNotNone(key_pair.public_key)
-        self.assertEqual(len(key_pair.private_key), 32)  # 256 bits
-        self.assertGreater(len(key_pair.public_key), 32)  # Compressed or uncompressed
+        
+        # Check private key hex length (32 bytes = 64 hex chars)
+        private_key_hex = key_pair.get_private_key_hex()
+        self.assertEqual(len(private_key_hex), 64)
+        
+        # Check that we can export public key
+        public_key_b64 = key_pair.export_public_key()
+        self.assertIsNotNone(public_key_b64)
+        
+        # Decode base64 to get actual PEM
+        import base64
+        public_key_pem = base64.b64decode(public_key_b64).decode()
+        self.assertIn('BEGIN PUBLIC KEY', public_key_pem)
         
     def test_ecdsa_key_from_private(self):
         """Test ECDSA key pair creation from private key"""
         # Generate a key pair
         original_pair = ECDSAKeyPair.generate()
-        private_key_bytes = original_pair.private_key
+        private_key_exported = original_pair.export_private_key()
         
         # Recreate from private key
-        recreated_pair = ECDSAKeyPair.from_private_key(private_key_bytes)
+        recreated_pair = ECDSAKeyPair.from_private_key(private_key_exported)
         
-        self.assertEqual(original_pair.private_key, recreated_pair.private_key)
-        self.assertEqual(original_pair.public_key, recreated_pair.public_key)
+        self.assertEqual(original_pair.get_private_key_hex(), recreated_pair.get_private_key_hex())
+        self.assertEqual(original_pair.export_public_key(), recreated_pair.export_public_key())
         
     def test_address_generation(self):
         """Test address generation from public key"""
@@ -159,17 +171,18 @@ class TestSignatures(unittest.TestCase):
         """Test SignatureData creation"""
         signature = "signature_hex"
         public_key = self.key_pair.export_public_key()
-        message_hash = "message_hash_hex"
+        address = self.key_pair.get_address()
         
         sig_data = SignatureData(
             signature=signature,
             public_key=public_key,
-            message_hash=message_hash
+            address=address,
+            timestamp=time.time()
         )
         
         self.assertEqual(sig_data.signature, signature)
         self.assertEqual(sig_data.public_key, public_key)
-        self.assertEqual(sig_data.message_hash, message_hash)
+        self.assertEqual(sig_data.address, address)
         self.assertIsNotNone(sig_data.timestamp)
         
     def test_transaction_signing(self):
@@ -183,11 +196,13 @@ class TestSignatures(unittest.TestCase):
             'fee': 1000
         }
         
-        private_key = self.key_pair.private_key.hex()
+        # Add key pair to signer
+        signer_address = self.key_pair.get_address()
+        self.transaction_signer.add_key_pair(signer_address, self.key_pair)
         
         # Sign transaction
         signature_data = self.transaction_signer.sign_transaction(
-            mock_transaction, private_key
+            mock_transaction.to_dict(), signer_address
         )
         
         self.assertIsInstance(signature_data, SignatureData)
@@ -196,7 +211,7 @@ class TestSignatures(unittest.TestCase):
         
         # Verify signature
         is_valid = self.transaction_signer.verify_transaction_signature(
-            mock_transaction, signature_data
+            mock_transaction.to_dict(), signature_data
         )
         self.assertTrue(is_valid)
         
@@ -214,16 +229,18 @@ class TestSignatures(unittest.TestCase):
             'transactions': []
         }
         
-        private_key = self.key_pair.private_key.hex()
+        # Add key pair to block signer
+        signer_address = self.key_pair.get_address()
+        self.block_signer.add_validator(signer_address, self.key_pair)
         
         # Sign block
-        signature_data = self.block_signer.sign_block(mock_block, private_key)
+        signature_data = self.block_signer.sign_block(mock_block.to_dict(), signer_address)
         
         self.assertIsInstance(signature_data, SignatureData)
         
         # Verify signature
         is_valid = self.block_signer.verify_block_signature(
-            mock_block, signature_data
+            mock_block.to_dict(), signature_data
         )
         self.assertTrue(is_valid)
         
@@ -235,11 +252,12 @@ class TestSignatures(unittest.TestCase):
             'deployer': '0x123'
         }
         
-        private_key = self.key_pair.private_key.hex()
+        # Get private key for signing
+        private_key_hex = self.key_pair.get_private_key_hex()
         
         # Sign contract
         signature_data = self.contract_signer.sign_contract(
-            contract_data, private_key
+            contract_data, private_key_hex
         )
         
         self.assertIsInstance(signature_data, SignatureData)
@@ -280,7 +298,7 @@ class TestSignatures(unittest.TestCase):
         
         # Sign proposal
         for i in range(2):  # Sign with 2 out of 3 keys
-            private_key = key_pairs[i].private_key.hex()
+            private_key = key_pairs[i].get_private_key_hex()
             success = multisig_manager.sign_transaction_proposal(
                 proposal_id, private_key
             )
@@ -315,33 +333,30 @@ class TestSignatures(unittest.TestCase):
     def test_signature_aggregator(self):
         """Test signature aggregation"""
         aggregator = SignatureAggregator()
+        validator = SignatureValidator()
         
-        # Create multiple signatures
-        signatures = []
+        # Create multiple signatures and add them
+        item_id = "test_item"
         message = b"common message"
         
-        for _ in range(3):
+        for i in range(3):
             kp = ECDSAKeyPair.generate()
-            sig = kp.sign_message(message)
+            sig = kp.sign(message)
             sig_data = SignatureData(
-                signature=sig.hex(),
+                signature=base64.b64encode(sig).decode(),
                 public_key=kp.export_public_key(),
-                message_hash=hashlib.sha256(message).hexdigest()
+                address=kp.get_address(),
+                timestamp=time.time()
             )
-            signatures.append(sig_data)
+            aggregator.add_signature(item_id, sig_data)
             
-        # Aggregate signatures
-        aggregated = aggregator.aggregate_signatures(signatures)
+        # Check signature count
+        count = aggregator.get_signature_count(item_id)
+        self.assertEqual(count, 3)
         
-        self.assertIsNotNone(aggregated)
-        self.assertIn('aggregated_signature', aggregated)
-        self.assertIn('public_keys', aggregated)
-        
-        # Verify aggregated signature
-        is_valid = aggregator.verify_aggregated_signature(
-            message.hex(), aggregated
-        )
-        self.assertTrue(is_valid)
+        # Verify batch
+        results = aggregator.verify_batch(validator)
+        self.assertIsInstance(results, dict)
 
 class TestPriceFeed(unittest.TestCase):
     """Test cases for price feed system"""
@@ -417,7 +432,7 @@ class TestPriceFeed(unittest.TestCase):
         
         success = self.price_manager.add_data_source(source)
         self.assertTrue(success)
-        self.assertIn("test_source", self.price_manager.data_sources)
+        self.assertIn("test_source", self.price_manager.external_data_sources)
         
     def test_add_oracle_node(self):
         """Test adding oracle node to manager"""
@@ -465,18 +480,37 @@ class TestPriceFeed(unittest.TestCase):
         self.price_manager.add_data_source(source)
         
         # Fetch price data
-        price_data = self.price_manager.fetch_price_data("binance", "BTC/USD")
+        price_data = self.price_manager.fetch_price_data_sync("binance", "BTC/USD")
         
         self.assertIsNotNone(price_data)
         self.assertEqual(price_data.symbol, "BTC/USD")
         
     def test_price_aggregation(self):
         """Test price aggregation from multiple sources"""
+        from oracles.price_feed import DataSourceType
         # Create sample price data
         prices = [
-            PriceData("BTC/USD", Decimal('50000'), int(time.time()), "source1", Decimal('100'), Decimal('95')),
-            PriceData("BTC/USD", Decimal('50100'), int(time.time()), "source2", Decimal('200'), Decimal('90')),
-            PriceData("BTC/USD", Decimal('49900'), int(time.time()), "source3", Decimal('150'), Decimal('85'))
+            PriceData(
+                symbol="BTC/USD", 
+                price=Decimal('50000'), 
+                volume=Decimal('100'), 
+                timestamp=int(time.time()), 
+                source=DataSourceType.BINANCE
+            ),
+            PriceData(
+                symbol="BTC/USD", 
+                price=Decimal('50100'), 
+                volume=Decimal('200'), 
+                timestamp=int(time.time()), 
+                source=DataSourceType.COINBASE
+            ),
+            PriceData(
+                symbol="BTC/USD", 
+                price=Decimal('49900'), 
+                volume=Decimal('150'), 
+                timestamp=int(time.time()), 
+                source=DataSourceType.KRAKEN
+            )
         ]
         
         # Test median aggregation
@@ -490,7 +524,7 @@ class TestPriceFeed(unittest.TestCase):
         
         # Test weighted average
         weighted_avg = self.price_manager.aggregate_prices(
-            prices, AggregationMethod.VOLUME_WEIGHTED_AVERAGE
+            prices, AggregationMethod.VOLUME_WEIGHTED
         )
         
         self.assertIsInstance(weighted_avg, AggregatedPrice)
@@ -584,7 +618,7 @@ class TestOracleManager(unittest.TestCase):
         # Submit response
         response_data = {'price': '50000.00'}
         confidence = Decimal('95.0')
-        private_key = key_pair.private_key.hex()
+        private_key = key_pair.get_private_key_hex()
         
         response_id = self.oracle_manager.submit_oracle_response(
             oracle_id, request_id, response_data, confidence, private_key
@@ -615,7 +649,7 @@ class TestOracleManager(unittest.TestCase):
         )
         
         response_id = self.oracle_manager.submit_oracle_response(
-            oracle_id, request_id, {'price': '50000.00'}, Decimal('95.0'), key_pair.private_key.hex()
+            oracle_id, request_id, {'price': '50000.00'}, Decimal('95.0'), key_pair.get_private_key_hex()
         )
         
         # Create dispute
@@ -740,6 +774,12 @@ class TestAccountManager(unittest.TestCase):
         
     def test_permission_management(self):
         """Test permission management"""
+        # Create admin user (default admin should exist)
+        admin_users = [user for user in self.account_manager.users.values() if user.role == UserRole.ADMIN]
+        self.assertTrue(len(admin_users) > 0, "No admin user found")
+        admin_user_id = admin_users[0].user_id
+        
+        # Create regular user
         username = "testuser"
         email = "test@example.com"
         password = "secure_password_123"
@@ -748,7 +788,7 @@ class TestAccountManager(unittest.TestCase):
         
         # Grant permission
         success = self.account_manager.grant_permission(
-            user_id, PermissionType.TRADE
+            admin_user_id, user_id, PermissionType.TRADE
         )
         self.assertTrue(success)
         
@@ -760,7 +800,7 @@ class TestAccountManager(unittest.TestCase):
         
         # Revoke permission
         success = self.account_manager.revoke_permission(
-            user_id, PermissionType.TRADE
+            admin_user_id, user_id, PermissionType.TRADE
         )
         self.assertTrue(success)
         

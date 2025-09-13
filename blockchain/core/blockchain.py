@@ -81,6 +81,9 @@ class Blockchain:
         self.utxo_set: Dict[str, UTXO] = {}  # Unspent transaction outputs
         self.transaction_pool = TransactionPool()
         
+        # Blockchain height property
+        self.height = 0
+        
         # Blockchain state
         self.current_difficulty = initial_difficulty
         self.total_supply = 0.0
@@ -112,6 +115,9 @@ class Blockchain:
         else:
             self._create_genesis_block()
             self._save_blockchain()
+        
+        # Update height after loading/creating
+        self.height = len(self.chain) - 1 if self.chain else 0
     
     def _create_genesis_block(self):
         """Create the genesis block"""
@@ -178,6 +184,11 @@ class Blockchain:
                 if tx:
                     return tx, block
         return None
+    
+    def get_transaction_by_hash(self, tx_hash: str) -> Optional[Transaction]:
+        """Get a transaction by its hash (alias for get_transaction_by_id)"""
+        result = self.get_transaction_by_id(tx_hash)
+        return result[0] if result else None
     
     def get_balance(self, address: str, asset_type: str = "COIN") -> float:
         """Get the balance for an address"""
@@ -259,6 +270,9 @@ class Blockchain:
         with self.chain_lock:
             self.chain.append(block)
             block.confirmations = 1
+            
+            # Update height
+            self.height = len(self.chain) - 1
             
             # Update confirmations for previous blocks
             for i in range(len(self.chain) - 2, -1, -1):
@@ -345,20 +359,53 @@ class Blockchain:
             'avg_block_time': sum(self.block_times) / len(self.block_times) if self.block_times else 0
         }
     
-    def validate_chain(self) -> bool:
-        """Validate the entire blockchain"""
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get blockchain statistics"""
+        with self.chain_lock:
+            total_transactions = sum(len(block.transactions) for block in self.chain)
+            avg_block_time = sum(self.block_times) / len(self.block_times) if self.block_times else 0
+            
+            return {
+                'height': self.height,
+                'total_blocks': len(self.chain),
+                'total_transactions': total_transactions,
+                'total_supply': self.total_supply,
+                'current_difficulty': self.current_difficulty,
+                'average_block_time': avg_block_time,
+                'hash_rate': self.hash_rate,
+                'chain_work': self.chain_work
+            }
+    
+    def validate_chain(self) -> Tuple[bool, List[str]]:
+        """Validate the entire blockchain and return validation result with errors"""
         print("Validating blockchain...")
         
         with self.chain_lock:
-            for i, block in enumerate(self.chain):
-                previous_block = self.chain[i - 1] if i > 0 else None
+            errors = []
+            
+            if not self.chain:
+                return True, errors
+            
+            # Validate genesis block
+            if not isinstance(self.chain[0], GenesisBlock):
+                errors.append("First block is not a genesis block")
+                return False, errors
+            
+            # Validate each block
+            for i in range(1, len(self.chain)):
+                current_block = self.chain[i]
+                previous_block = self.chain[i - 1]
                 
-                if not block.validate_block(previous_block):
-                    print(f"Invalid block at height {i}: {block.hash}")
-                    return False
-        
-        print("Blockchain validation successful")
-        return True
+                if not current_block.validate_block(previous_block):
+                    errors.append(f"Block {i} validation failed")
+            
+            is_valid = len(errors) == 0
+            if is_valid:
+                print("Blockchain validation successful")
+            else:
+                print(f"Blockchain validation failed with {len(errors)} errors")
+            
+            return is_valid, errors
     
     def _save_blockchain(self):
         """Save blockchain to disk"""

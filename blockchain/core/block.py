@@ -210,11 +210,44 @@ class Block:
         self.hash = None
         self.calculate_hash()
     
+    @property
+    def index(self) -> int:
+        """Get block index (alias for block_height)"""
+        return self.block_height
+    
     def calculate_hash(self) -> str:
         """Calculate the hash of the block"""
         self.hash = self.header.calculate_hash()
         self.header.hash = self.hash
         return self.hash
+    
+    @staticmethod
+    def calculate_merkle_root(hashes: List[str]) -> str:
+        """Calculate Merkle root for a list of hashes"""
+        if not hashes:
+            return "0" * 64
+        
+        if len(hashes) == 1:
+            return hashes[0]
+        
+        # Build merkle tree
+        current_level = hashes[:]
+        
+        while len(current_level) > 1:
+            next_level = []
+            
+            # Process pairs
+            for i in range(0, len(current_level), 2):
+                left = current_level[i]
+                right = current_level[i + 1] if i + 1 < len(current_level) else left
+                
+                combined = left + right
+                hash_result = hashlib.sha256(combined.encode()).hexdigest()
+                next_level.append(hash_result)
+            
+            current_level = next_level
+        
+        return current_level[0]
     
     def mine_block(self) -> bool:
         """Mine the block using Proof of Work"""
@@ -262,7 +295,7 @@ class Block:
         
         # Validate all transactions
         for transaction in self.transactions:
-            if not transaction.is_valid:
+            if not transaction.validate_transaction({}):
                 return False
         
         # Check block size limits
@@ -277,6 +310,15 @@ class Block:
         self.is_valid = True
         return True
     
+    def validate(self) -> tuple:
+        """Alias for validate_block that returns (is_valid, errors) for test compatibility"""
+        try:
+            is_valid = self.validate_block()
+            errors = [] if is_valid else ["Block validation failed"]
+            return is_valid, errors
+        except Exception as e:
+            return False, [str(e)]
+    
     def get_transaction_by_id(self, tx_id: str) -> Optional[Transaction]:
         """Get a transaction by its ID"""
         for tx in self.transactions:
@@ -287,6 +329,10 @@ class Block:
     def get_block_size(self) -> int:
         """Get the size of the block in bytes"""
         return len(json.dumps(self.to_dict()).encode())
+    
+    def calculate_size(self) -> int:
+        """Alias for get_block_size for test compatibility"""
+        return self.get_block_size()
     
     def get_total_fees(self) -> float:
         """Calculate total transaction fees in the block"""
@@ -337,7 +383,6 @@ class Block:
             'timestamp': self.timestamp,
             'transactions': [tx.to_dict() for tx in self.transactions],
             'transaction_count': len(self.transactions),
-            'block_size': self.get_block_size(),
             'total_fees': self.get_total_fees(),
             'is_valid': self.is_valid,
             'confirmations': self.confirmations
